@@ -9,6 +9,7 @@ function createMonthlyBills(periodInput, options) {
       var roomMap = getRoomMasterMap_();
       var meterIndex = buildMeterReadingIndex_();
       var verifiedTotals = getVerifiedPaymentTotals_();
+      var adjustmentTotals = getApprovedAdjustmentTotals_();
       var billSheet = ss.getSheetByName(V7.SHEETS.BILLING);
       var existing = {};
       if (billSheet.getLastRow() >= 2) {
@@ -43,12 +44,14 @@ function createMonthlyBills(periodInput, options) {
         var total = roundMoney_(baseRent + electricity);
         var dueDate = dueDateForPeriod_(period, toNumber_(getConfigValue_('BILLING_DUE_DAY', '5')));
         var verified = roundMoney_(verifiedTotals[billId] || 0);
-        var outstanding = roundMoney_(Math.max(0, total - verified));
+        var adjustments = roundMoney_(adjustmentTotals[billId] || 0);
+        var outstanding = calculateOutstanding_(total, verified, adjustments);
         var upi = buildUpiLink_(outstanding, roomNo, period);
         var message = buildBillingMessage({
           tenantName: room.tenantName, period: period, baseRent: baseRent,
           electricityAmount: electricity, totalAmount: total,
-          verifiedPayments: verified, outstandingAmount: outstanding, upiLink: upi
+          verifiedPayments: verified, waiverCreditAdjustments: adjustments,
+          outstandingAmount: outstanding, upiLink: upi
         });
         var whatsapp = buildWhatsAppUrl_(room.mobile, message);
         var qrUrl = buildQrUrl_(upi);
@@ -56,7 +59,8 @@ function createMonthlyBills(periodInput, options) {
         var billRow = [
           billId, roomNo, room.tenantId, period, baseRent, previous.reading, current.reading,
           units, rate, electricity, total, verified, outstanding, dueDate,
-          'ISSUED', reconciliationStatus_(total, verified), whatsapp, upi, qrUrl, new Date(), 'V7_BILLING_ENGINE', '', '', ''
+          'ISSUED', reconciliationStatus_(total, verified, adjustments), whatsapp, upi, qrUrl, new Date(), 'V7_BILLING_ENGINE', '', '',
+          adjustments > 0 ? 'Approved rent waiver/credit adjustments: Rs. ' + adjustments.toFixed(2) : ''
         ];
         if (existingBill && existingBill.status === 'PLANNED') updates.push({ rowNumber: existingBill.rowNumber, values: billRow });
         else output.push(billRow);
