@@ -198,7 +198,7 @@ function buildMigrationPlan_(ss, runId) {
         }
       }
       if (payPhoto) {
-        var payPhotoKey = formRoom + '|' + formPeriod + '|PAYMENT_RECEIPT|' + payPhoto;
+        var payPhotoKey = formRoom + '|' + formPeriod + '|' + (legacyAdjustmentId ? 'ADJUSTMENT_EVIDENCE' : 'LEGACY_REFERENCE_UNCLASSIFIED') + '|' + payPhoto;
         if (!seenReceiptRefs[payPhotoKey]) {
           seenReceiptRefs[payPhotoKey] = true;
           var payReceiptId = 'LEGACY-FORM-ADJUSTMENT-EVIDENCE-' + formRoom + '-' + formPeriod + '-' + (fr + 1);
