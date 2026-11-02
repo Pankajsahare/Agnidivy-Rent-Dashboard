@@ -13,8 +13,10 @@
 - WhatsApp billing text साठी एकच `buildBillingMessage()` source आहे. Historical migration, नवीन बिल आणि payment verification या तिन्ही ठिकाणी त्याच logic चा वापर होतो.
 - `System Config` आणि `Migration Overrides` Sheets मधून बदलणारी व्यावसायिक माहिती व confirmed exceptions वाचली जाते. Critical switches (`MIGRATION_APPROVED`, `MAIL_ENABLED`, `AUTO_CREATE_MONTHLY_BILLS`, `ENABLE_EXTERNAL_QR`) नेहमी live sheet मधून वाचले जातात; stale cache वर अवलंबून नाहीत.
 - `LockService` आणि row-based idempotency keys वापरून form submit आणि billing duplicate processing नियंत्रित केले आहे.
-- प्रत्येक payment स्वतंत्र `Payment Ledger` row आहे. Form मधील payment हा `REPORTED_UNVERIFIED` असतो; administrator verification नंतरच तो `VERIFIED` होतो.
-- जुने room-wise `Amount Paid` records `LEGACY_UNVERIFIED` म्हणून import होतात. जुना QR किंवा `PAID` label पाहून payment verified मानले जात नाही.
+- प्रत्येक प्रत्यक्ष payment स्वतंत्र `Payment Ledger` row आहे. Form मधील cash payment हा `REPORTED_UNVERIFIED` असतो; administrator verification नंतरच तो `VERIFIED` होतो.
+- Rent Waiver/Credit साठी स्वतंत्र append-first `Adjustment Ledger` आहे. `APPROVED` credits हे Outstanding कमी करतात; त्यांना cash received मानले जात नाही.
+- Legacy room-wise `Amount Paid` records user-confirmed `RENT_WAIVER_CREDIT` म्हणून `Adjustment Ledger` मध्ये import होतात; ते cash receipts किंवा Payment Ledger rows नाहीत.
+- Approved waiver/credit adjustments स्वतंत्रपणे outstanding कमी करतात. प्रत्यक्ष received payments अजूनही फक्त `Payment Ledger` मधील `VERIFIED` rows मधूनच मोजले जातात.
 - Migration ही append-only आहे. Dry-run आधी; `MIGRATION_APPROVED=YES` आणि UI confirmation नंतरच Apply होते. जुने tabs clear किंवा delete केले जात नाहीत.
 - Tenant receipts / agreements साठी `Anyone with the link` permission दिली जात नाही. Legacy Drive permissions आपोआप बदलले जात नाहीत.
 - Agreement साठी DOCX template वापरले जात नाही. मूळ v6.1 Apps Script मधील native DocumentApp renderer — 2-page layout, headings, green tables, property details, deposit/tenure, सर्व 8 Terms & Conditions, witness statement आणि signature table — v7 मध्ये जतन केला आहे. दिलेल्या Live Google Docs Master ची copy तयार होते; त्या copy चा body v6.1 layout ने rebuild होतो. मूळ Live Master document बदलत नाही. PDF tenant-specific file म्हणून Drive मध्ये जतन होते; duplicate generation साठी lock + tenant/room/start-date key आहे आणि failure झाल्यास unregistered temporary copies साफ केल्या जातात.
@@ -34,9 +36,10 @@
 
 1. November 2026 मध्ये B2 — Aifaz.
 2. November 2026 मध्ये B3 — Aman.
-3. C2 November 2026 मधील ₹5,500 → ₹5,683 → ₹5,683.60 या तीन Form amounts या एकाच व्यवहाराच्या सुधारित नोंदी आहेत. अंतिम ₹5,683.60 एकदाच import होते; आधीच्या Form values स्वतंत्र payments म्हणून import होत नाहीत.
+3. C2 November 2026 मधील ₹5,500 → ₹5,683 → ₹5,683.60 या तीन Form amounts या एकाच Rent Waiver/Credit Adjustment च्या सुधारित नोंदी आहेत. अंतिम ₹5,683.60 एकदाच Adjustment Ledger मध्ये import होते; आधीच्या Form values स्वतंत्र credits किंवा cash payments म्हणून import होत नाहीत.
+4. सर्व 58 legacy `Amount Paid` values या user-confirmed Rent Waiver/Credit Adjustments आहेत; एकूण ₹2,83,606.60. प्रत्येक adjustment संबंधित `Total Amount` इतकी आहे. त्या 58 नोंदींमुळे संबंधित historical bills चे Outstanding ₹0 होते.
 
-C2 चा अंतिम Payment Ledger record देखील `LEGACY_UNVERIFIED` असतो. प्रत्यक्ष UPI/bank transaction तपासून administrator ने verify करणे आवश्यक आहे.
+C2 ची अंतिम ₹5,683.60 नोंद `Adjustment Ledger` मध्ये `APPROVED` credit म्हणून जाते. या रकमेची cash payment म्हणून verification अपेक्षित नाही.
 
 ## महत्त्वाची मर्यादा
 
@@ -96,7 +99,7 @@ Google Workspace च्या Live Sheet, Form, Docs आणि Drive links य�
 
 1. Menu `Sahare Properties v7 → 3. Run Migration Dry Run` चालवा.
 2. `Migration Preview` tab तपासा. प्रत्येक row मध्ये Target Sheet, Record ID, Source Row, Warning आणि JSON payload असतो.
-3. विशेषतः `C2 2026-11`, `B2`, `B3`, `LEGACY_UNVERIFIED` आणि `LEGACY_INCOMPLETE` records तपासा.
+3. विशेषतः `C2 2026-11`, `Adjustment Ledger`, `B2`, `B3` आणि `LEGACY_INCOMPLETE` records तपासा. 58 legacy credits Payment Ledger मध्ये नसावेत.
 4. सगळे बरोबर असल्यावर `System Config` मध्ये `MIGRATION_APPROVED` ची value `YES` करा.
 5. Menu `Apply Approved Migration` चालवा आणि confirmation द्या.
 6. Apply झाल्यावर script `MIGRATION_APPROVED` परत `NO` करतो.
@@ -106,10 +109,10 @@ Migration पुन्हा चालवावी लागल्यास न�
 ### F. Payment verification
 
 1. `Payment Ledger` उघडा.
-2. संबंधित payment row निवडा.
+2. फक्त प्रत्यक्ष UPI/bank cash receipt ची row निवडा.
 3. `Sahare Properties v7 → Verify Selected Payment` चालवा.
 4. UPI/bank statement/transaction reference तपासूनच `YES` द्या.
-5. Verified झाल्यानंतर संबंधित bill चे verified total, outstanding, UPI link आणि WhatsApp link पुन्हा मोजले जातात.
+5. Verified payment आणि approved credit adjustments यांचा स्वतंत्र हिशेब करून संबंधित bill चे outstanding, UPI link आणि WhatsApp link पुन्हा मोजले जातात.
 
 ### G. Agreement generation
 
@@ -153,6 +156,7 @@ Google Apps Script services (SpreadsheetApp, DriveApp, DocumentApp, MailApp, Loc
 - `src/05_MeterService.gs` — meter ledger and indexed reads
 - `src/06_BillingService.gs` — monthly bill creation
 - `src/07_PaymentService.gs` — payment intake and manual verification
+- `src/14_AdjustmentService.gs` — approved rent waiver/credit totals
 - `src/08_FormHandler.gs` — exact-row form trigger
 - `src/09_NotificationService.gs` — queued email, retry and attachments
 - `src/10_AgreementService.gs` — Google Docs copy → PDF
