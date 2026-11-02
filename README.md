@@ -1,6 +1,7 @@
+[README.md](https://github.com/user-attachments/files/34285190/README.md)
 # Sahare Properties — Rent & Collection Auto-Pilot v7
 
-**Version:** 7.0.0  
+**Version:** 7.0.1  
 **Runtime:** Google Apps Script V8  
 **Timezone:** Asia/Kolkata  
 **Architecture:** Container-bound Apps Script + Google Sheets + Google Forms + Google Drive/Docs + Gmail; GitHub is the source-control and validation layer.
@@ -16,7 +17,7 @@
 - जुने room-wise `Amount Paid` records `LEGACY_UNVERIFIED` म्हणून import होतात. जुना QR किंवा `PAID` label पाहून payment verified मानले जात नाही.
 - Migration ही append-only आहे. Dry-run आधी; `MIGRATION_APPROVED=YES` आणि UI confirmation नंतरच Apply होते. जुने tabs clear किंवा delete केले जात नाहीत.
 - Tenant receipts / agreements साठी `Anyone with the link` permission दिली जात नाही. Legacy Drive permissions आपोआप बदलले जात नाहीत.
-- Google Docs live master template मधून agreement copy तयार होते. PDF tenant-specific file म्हणून Drive मध्ये जतन होते; duplicate generation साठी lock + tenant/room/start-date key आहे आणि failure झाल्यास unregistered temporary copies साफ केल्या जातात.
+- Agreement साठी DOCX template वापरले जात नाही. मूळ v6.1 Apps Script मधील native DocumentApp renderer — 2-page layout, headings, green tables, property details, deposit/tenure, सर्व 8 Terms & Conditions, witness statement आणि signature table — v7 मध्ये जतन केला आहे. दिलेल्या Live Google Docs Master ची copy तयार होते; त्या copy चा body v6.1 layout ने rebuild होतो. मूळ Live Master document बदलत नाही. PDF tenant-specific file म्हणून Drive मध्ये जतन होते; duplicate generation साठी lock + tenant/room/start-date key आहे आणि failure झाल्यास unregistered temporary copies साफ केल्या जातात.
 - `Sync Form Room Choices` मेनूमधून Room Master वरून Room dropdown आणि Billing Period (`YYYY-MM`) choices अद्ययावत करता येतात; जुन्या Form responses बदलत नाहीत. Legacy choice `B2 - Aifaz (Meter: J0044)` मधून room code वेगळा ओळखला जातो.
 - Agreement expiry पूर्वी `RENEWAL_REMINDER_DAYS` (default 30) मध्ये येणाऱ्या active tenants साठी duplicate-safe email reminder queue तयार होते.
 - Email queue, retry count, error log, audit log आणि dashboard समाविष्ट आहेत.
@@ -39,7 +40,7 @@ C2 चा अंतिम Payment Ledger record देखील `LEGACY_UNVERIFI
 
 ## महत्त्वाची मर्यादा
 
-Google Workspace च्या Live Sheet, Form, Docs आणि Drive links या session मधून थेट वाचता आले नाहीत; Google Drive connector उपलब्ध नव्हता. म्हणून हा code bundle दिलेल्या ZIP workbook, uploaded v6.1 Apps Script आणि वापरकर्त्याने दिलेल्या पुष्टींवर आधारित आहे. Live Google Docs template चा ID config मध्ये ठेवला आहे; परंतु त्याचा live content deployment वेळी access व placeholders तपासले जातील. Agreement generation अपेक्षित placeholders नसल्यास थांबते.
+Google Workspace च्या Live Sheet, Form, Docs आणि Drive links या session मधून थेट वाचता आले नाहीत; Google Drive connector उपलब्ध नव्हता. म्हणून हा code bundle दिलेल्या ZIP workbook, uploaded v6.1 Apps Script आणि वापरकर्त्याने दिलेल्या पुष्टींवर आधारित आहे. Live Google Docs template चा ID config मध्ये ठेवला आहे. त्यावर Apps Script ला access असणे आवश्यक आहे. Generated copy मध्ये v6.1 चे native layout render होते; DOCX-derived placeholders आवश्यक नाहीत. Live Master स्वतः बदलला जात नाही.
 
 ---
 
@@ -80,7 +81,9 @@ Google Workspace च्या Live Sheet, Form, Docs आणि Drive links य�
 | `UPI_ID` | Source script मधील existing UPI ID prefilled |
 | `UPI_NAME` | Sahare Properties |
 | `ADMIN_EMAIL` | योग्य admin email स्वतः भरा |
-| `AGREEMENT_TEMPLATE_ID` | दिलेल्या Live Google Docs Master Template चा ID prefilled |
+| `AGREEMENT_TEMPLATE_ID` | दिलेल्या Live Google Docs Master चा ID prefilled; generated copy मध्ये v6.1 layout render होतो |
+| `AGREEMENT_LAYOUT_VERSION` | `V6.1_NATIVE_DOCUMENTAPP` |
+| `OWNER_MOBILE` | Agreement मध्ये छापला जाणारा Owner Mobile |
 | `AGREEMENT_FOLDER_ID` | दिलेल्या Drive folder ID ने prefilled; folder permissions तपासा |
 | `FORM_ID` | दिलेल्या Google Form ID ने prefilled; Form edit access तपासा |
 | `RENEWAL_REMINDER_DAYS` | Default 30 दिवस; गरजेनुसार बदला |
@@ -110,10 +113,11 @@ Migration पुन्हा चालवावी लागल्यास न�
 
 ### G. Agreement generation
 
-1. `System Config` मधील `AGREEMENT_TEMPLATE_ID` तपासा.
-2. Live Google Docs template मध्ये uploaded DOCX template प्रमाणे पुढील placeholders असणे आवश्यक आहे: `{{TenantName}}`, `{{RoomNo}}`, `{{MobileNumber}}`, `{{Rent}}`, `{{Deposit}}`, `{{DepositMode}}`, `{{DepositDate}}`, `{{StartDate}}`, `{{EndDate}}`.
+1. `System Config` मधील `AGREEMENT_TEMPLATE_ID` तपासा आणि Script चालवणाऱ्या Google Account ला त्या Live Google Docs Master चा access आहे याची खात्री करा.
+2. DOCX Placeholder format आवश्यक नाही. v7 generated copy मध्ये v6.1 चे मूळ native DocumentApp layout पुन्हा तयार करतो: 2 pages, original green styling, तीन tables, 8 Terms & Conditions आणि signature blocks.
 3. `Sahare Properties v7 → Generate Agreement` निवडा आणि Room No भरा.
-4. PDF व Google Docs copy खाजगी permissions सह तयार होतात. Email queue मध्ये नोंद `MAIL_ENABLED=NO` असतानाही होऊ शकते; परंतु `YES` होईपर्यंत worker कोणतेही Email पाठवत नाही.
+4. Script Live Master ची copy तयार करतो; फक्त copy चा body rebuild होतो. मूळ Master बदलत नाही. PDF आणि Google Docs copy configured Drive folder मध्ये restricted permissions सह तयार होतात.
+5. Email queue मध्ये नोंद `MAIL_ENABLED=NO` असतानाही होऊ शकते; परंतु `YES` होईपर्यंत worker कोणतेही Email पाठवत नाही.
 
 ### H. Go-live triggers
 
