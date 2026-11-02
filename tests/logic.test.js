@@ -76,6 +76,26 @@ test('addMonthsClamped is compatible with end-of-month date arithmetic', () => {
 });
 
 
+test('migration override periods normalize Google Sheets Date and serial values', () => {
+  const sandbox = {
+    Number, Math, Date, String, Object, Array, encodeURIComponent, isNaN, parseInt, parseFloat,
+    Utilities: { formatDate: (date, timezone, pattern) => {
+      assert.equal(timezone, 'Asia/Kolkata');
+      assert.equal(pattern, 'yyyy-MM');
+      return String(date.getFullYear()) + '-' + String(date.getMonth() + 1).padStart(2, '0');
+    }},
+    V7: { TIMEZONE: 'Asia/Kolkata' }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox);
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'src', '11_MigrationService.gs'), 'utf8');
+  vm.runInContext(migration, sandbox);
+  assert.equal(sandbox.normalizeMigrationPeriod_(new Date(2026, 10, 1)), '2026-11');
+  assert.equal(sandbox.normalizeMigrationPeriod_(new Date(Date.UTC(2026, 10, 1))), '2026-11');
+  assert.equal(sandbox.normalizeMigrationPeriod_('2026-11'), '2026-11');
+  assert.equal(sandbox.normalizeMigrationPeriod_('2026/11'), '2026-11');
+});
+
 test('reconciliationStatus distinguishes incomplete, paid, partial, and overpaid', () => {
   assert.equal(sandbox.reconciliationStatus_('', 100), 'LEGACY_INCOMPLETE');
   assert.equal(sandbox.reconciliationStatus_(100, 0), 'NOT_YET_VERIFIED');
