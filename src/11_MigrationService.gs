@@ -24,6 +24,8 @@ function runMigrationDryRun() {
 function buildMigrationPlan_(ss, runId) {
   var plan = [];
   var seenReceiptRefs = {};
+  var adjustmentIdsByRoomPeriod = {};
+  var formSheet = ss.getSheetByName('Form Responses');
   var overrides = getMigrationOverrides_();
   var tenantSheet = ss.getSheetByName('Tenant Master');
   if (tenantSheet && tenantSheet.getLastRow() >= 2) {
@@ -92,10 +94,10 @@ function buildMigrationPlan_(ss, runId) {
       var reading = valueByAliases_(row, cols, ['Reading', 'Current Reading']);
       var units = valueByAliases_(row, cols, ['Unit Consumed', 'Units Consumed']);
       var rate = toNumber_(valueByAliases_(row, cols, ['Elc. Rate', 'Electricity Rate']), toNumber_(roomToTenant[roomNo].ElectricityRate));
-      var paidRaw = valueByAliases_(row, cols, ['Amount Paid']);
-      var paid = roundMoney_(paidRaw);
-      var paymentOverride = overrides['PAYMENT_FINAL_VALUE|' + roomNo + '|' + period];
-      if (paymentOverride && paymentOverride.active) paid = roundMoney_(paymentOverride.value);
+      var adjustmentRaw = valueByAliases_(row, cols, ['Amount Paid']);
+      var adjustmentAmount = roundMoney_(adjustmentRaw);
+      var adjustmentOverride = overrides['ADJUSTMENT_FINAL_VALUE|' + roomNo + '|' + period] || overrides['PAYMENT_FINAL_VALUE|' + roomNo + '|' + period];
+      if (adjustmentOverride && adjustmentOverride.active) adjustmentAmount = roundMoney_(adjustmentOverride.value);
       var balanceRaw = valueByAliases_(row, cols, ['Balance Due']);
       var sourceRow = i + 1;
       var future = period > Utilities.formatDate(new Date(), V7.TIMEZONE, 'yyyy-MM');
@@ -107,15 +109,17 @@ function buildMigrationPlan_(ss, runId) {
         PreviousReading: '', CurrentReading: reading === '' ? '' : toNumber_(reading),
         UnitsConsumed: units === '' ? '' : roundMoney_(units), ElectricityRate: rate,
         ElectricityAmount: electric, TotalAmount: total,
-        VerifiedPayments: 0, OutstandingAmount: total === '' ? '' : total,
+        VerifiedPayments: 0, OutstandingAmount: calculateOutstanding_(total, 0, adjustmentAmount),
         DueDate: dueDateForPeriod_(period, toNumber_(getConfigValue_('BILLING_DUE_DAY', '5'))),
-        BillStatus: billStatus, ReconciliationStatus: 'LEGACY_NOT_RECONCILED',
+        BillStatus: billStatus, ReconciliationStatus: reconciliationStatus_(total, 0, adjustmentAmount),
         WhatsAppURL: '', UPIURL: '', UPIQRURL: '', CreatedAt: new Date(), Source: 'LEGACY_ROOM_TAB',
         SourceSheet: roomNo, SourceRow: sourceRow,
-        Notes: String(valueByAliases_(row, cols, ['Remark', 'Remarks']) || '') + (balanceRaw !== '' ? ' | Legacy displayed balance: ' + balanceRaw : '')
+        Notes: String(valueByAliases_(row, cols, ['Remark', 'Remarks']) || '') +
+          (balanceRaw !== '' ? ' | Legacy displayed balance: ' + balanceRaw : '') +
+          (adjustmentAmount > 0 ? ' | User-confirmed rent waiver/credit adjustment: Rs. ' + adjustmentAmount.toFixed(2) : '')
       };
       if (total !== '' || baseRent > 0) {
-        plan.push(makePlanItem_('BILLING_LEDGER', V7.SHEETS.BILLING, billId, roomNo, sourceRow, period, billPayload, total === '' ? 'No legacy Total Rent value; imported as incomplete, not billed.' : 'Historical bill imported without assuming payment verification.'));
+        plan.push(makePlanItem_('BILLING_LEDGER', V7.SHEETS.BILLING, billId, roomNo, sourceRow, period, billPayload, total === '' ? 'No legacy Total Rent value; imported as incomplete, not billed.' : 'Historical bill imported; approved legacy waiver/credit adjustments reduce outstanding separately from cash payments.'));
       }
       if (reading !== '' && reading !== null && toNumber_(reading) >= 0) {
         var readingId = 'LEGACY-READ-' + roomNo + '-' + period;
@@ -128,34 +132,36 @@ function buildMigrationPlan_(ss, runId) {
         };
         plan.push(makePlanItem_('METER_READING_LEDGER', V7.SHEETS.METERS, readingId, roomNo, sourceRow, period, meterPayload, 'Room tab selected as canonical reading source to prevent duplicate form submissions.'));
       }
-      if (paid > 0) {
-        var paymentId = 'LEGACY-PAY-' + roomNo + '-' + period;
-        var receiptRef = String(valueByAliases_(row, cols, ['Payment Receipt Photo']) || '');
-        var paymentPayload = {
-          PaymentID: paymentId, BillID: billId, RoomNo: roomNo,
+      if (adjustmentAmount > 0) {
+        var adjustmentId = 'LEGACY-ADJ-' + roomNo + '-' + period;
+        adjustmentIdsByRoomPeriod[roomNo + '|' + period] = adjustmentId;
+        var adjustmentPayload = {
+          AdjustmentID: adjustmentId, BillID: billId, RoomNo: roomNo,
           TenantID: roomToTenant[roomNo].CurrentTenantID, BillingPeriod: period,
-          Amount: paid, ReportedAt: '', PaymentMethod: 'LEGACY_RECORDED', ReferenceNumber: '',
-          ReceiptURL: receiptRef, VerificationStatus: 'LEGACY_UNVERIFIED', VerifiedAt: '',
-          VerifiedBy: '', IdempotencyKey: paymentId, SourceType: 'LEGACY_ROOM_TAB',
+          AdjustmentType: 'RENT_WAIVER_CREDIT', Amount: adjustmentAmount,
+          Reason: 'User-confirmed legacy Rent Waiver/Credit Adjustment.',
+          ApprovalStatus: 'APPROVED', ApprovedBy: getActor_(), ApprovedAt: new Date(),
+          IdempotencyKey: adjustmentId, SourceType: 'LEGACY_ROOM_TAB',
           SourceSheet: roomNo, SourceRow: sourceRow,
-          Notes: roomNo === 'C2' && period === '2026-11' ? 'User-confirmed corrections: Form values 5500 -> 5683 -> 5683.60 are revisions of one transaction. Import final Room Tab value once; earlier form values are superseded evidence. Verification still required.' : 'Imported from legacy Amount Paid cell; not verified against bank/UPI evidence.'
+          Notes: 'Imported from legacy Amount Paid cell as a waiver/credit, not a cash receipt. User confirmed all 58 legacy records use this classification.'
         };
-        plan.push(makePlanItem_('PAYMENT_LEDGER', V7.SHEETS.PAYMENTS, paymentId, roomNo, sourceRow, period, paymentPayload, 'Imported as LEGACY_UNVERIFIED; does not reduce confirmed outstanding until manually verified.'));
+        plan.push(makePlanItem_('ADJUSTMENT_LEDGER', V7.SHEETS.ADJUSTMENTS, adjustmentId, roomNo, sourceRow, period, adjustmentPayload, 'User-confirmed rent waiver/credit; reduces bill outstanding, not payment receipts.'));
+        var receiptRef = String(valueByAliases_(row, cols, ['Payment Receipt Photo']) || '');
         if (receiptRef) {
           var refs = receiptRef.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
           refs.forEach(function (ref, refIndex) {
-            var receiptKey = roomNo + '|' + period + '|PAYMENT_RECEIPT|' + ref;
+            var receiptKey = roomNo + '|' + period + '|ADJUSTMENT_EVIDENCE|' + ref;
             if (seenReceiptRefs[receiptKey]) return;
             seenReceiptRefs[receiptKey] = true;
-            var receiptId = 'LEGACY-REC-' + roomNo + '-' + period + '-' + (refIndex + 1);
+            var receiptId = 'LEGACY-ADJ-REC-' + roomNo + '-' + period + '-' + (refIndex + 1);
             var receiptPayload = {
               ReceiptID: receiptId, RoomNo: roomNo, TenantID: roomToTenant[roomNo].CurrentTenantID,
-              BillingPeriod: period, PaymentID: paymentId, ReceiptType: 'PAYMENT_RECEIPT',
+              BillingPeriod: period, PaymentID: '', ReceiptType: 'ADJUSTMENT_EVIDENCE',
               FileReference: ref, SourceSheet: roomNo, SourceRow: sourceRow,
               AccessStatus: 'LEGACY_PERMISSION_NOT_VERIFIED', IdempotencyKey: receiptId, CreatedAt: new Date(),
-              Notes: 'Original sharing permissions were not changed during migration.'
+              Notes: 'Original file reference retained as adjustment evidence; no payment is represented.'
             };
-            plan.push(makePlanItem_('RECEIPT_REGISTER', V7.SHEETS.RECEIPTS, receiptId, roomNo, sourceRow, period, receiptPayload, 'Check Drive permissions separately; no public sharing is created.'));
+            plan.push(makePlanItem_('RECEIPT_REGISTER', V7.SHEETS.RECEIPTS, receiptId, roomNo, sourceRow, period, receiptPayload, 'Adjustment evidence only; no cash payment is linked.'));
           });
         }
       }
@@ -175,7 +181,7 @@ function buildMigrationPlan_(ss, runId) {
       var formPeriod = resolveFormPeriod_(formMonth, formTimestamp);
       var meterPhoto = String(valueByAliases_(formRow, formHeaders, ['Meter Reading Photo', 'Reading Photo']) || '').trim();
       var payPhoto = String(valueByAliases_(formRow, formHeaders, ['Payment Receipt Photo / Screenshot', 'Payment Receipt Photo', 'Receipt Photo']) || '').trim();
-      var legacyPaymentId = 'LEGACY-PAY-' + formRoom + '-' + formPeriod;
+      var legacyAdjustmentId = adjustmentIdsByRoomPeriod[formRoom + '|' + formPeriod] || '';
       if (meterPhoto) {
         var meterPhotoKey = formRoom + '|' + formPeriod + '|METER_PHOTO|' + meterPhoto;
         if (!seenReceiptRefs[meterPhotoKey]) {
@@ -195,14 +201,14 @@ function buildMigrationPlan_(ss, runId) {
         var payPhotoKey = formRoom + '|' + formPeriod + '|PAYMENT_RECEIPT|' + payPhoto;
         if (!seenReceiptRefs[payPhotoKey]) {
           seenReceiptRefs[payPhotoKey] = true;
-          var payReceiptId = 'LEGACY-FORM-PAY-RECEIPT-' + formRoom + '-' + formPeriod + '-' + (fr + 1);
+          var payReceiptId = 'LEGACY-FORM-ADJUSTMENT-EVIDENCE-' + formRoom + '-' + formPeriod + '-' + (fr + 1);
           var payReceiptPayload = {
             ReceiptID: payReceiptId, RoomNo: formRoom, TenantID: roomToTenant[formRoom].CurrentTenantID,
-            BillingPeriod: formPeriod, PaymentID: legacyPaymentId, ReceiptType: 'PAYMENT_RECEIPT',
+            BillingPeriod: formPeriod, PaymentID: '', ReceiptType: legacyAdjustmentId ? 'ADJUSTMENT_EVIDENCE' : 'LEGACY_REFERENCE_UNCLASSIFIED',
             FileReference: payPhoto, SourceSheet: formSheet.getName(), SourceRow: fr + 1,
             AccessStatus: 'LEGACY_PERMISSION_NOT_VERIFIED', IdempotencyKey: payReceiptId,
             CreatedAt: formTimestamp,
-            Notes: formRoom === 'C2' && formPeriod === '2026-11' ? 'Receipt evidence attached to one corrected C2 transaction; Form amount revisions are not separate payments.' : 'Form-uploaded payment receipt retained as evidence; not counted as a separate payment.'
+            Notes: legacyAdjustmentId ? 'Form upload retained as supporting waiver/credit adjustment evidence; not a payment receipt.' : 'Legacy Form file reference retained without classifying it as a cash payment.'
           };
           plan.push(makePlanItem_('RECEIPT_REGISTER', V7.SHEETS.RECEIPTS, payReceiptId, formSheet.getName(), fr + 1, formPeriod, payReceiptPayload, 'Original Drive permissions were not changed.'));
         }
@@ -210,9 +216,8 @@ function buildMigrationPlan_(ss, runId) {
     }
   }
 
-  // Explicit audit note for the user-confirmed C2 November correction chain.
+  // Explicit audit note for the user-confirmed C2 November adjustment correction chain.
   var c2PaymentRows = [];
-  var formSheet = ss.getSheetByName('Form Responses');
   if (formSheet && formSheet.getLastRow() >= 2) {
     var fdata = formSheet.getDataRange().getValues();
     var fcols = getColumnMap(fdata[0]);
@@ -226,18 +231,18 @@ function buildMigrationPlan_(ss, runId) {
       if (froom === 'C2' && fperiod === '2026-11' && famount > 0) c2PaymentRows.push({ row: f + 1, amount: roundMoney_(famount) });
     }
   }
-  if (c2PaymentRows.length || overrides['PAYMENT_FINAL_VALUE|C2|2026-11']) {
-    var c2Override = overrides['PAYMENT_FINAL_VALUE|C2|2026-11'];
+  var c2Override = overrides['ADJUSTMENT_FINAL_VALUE|C2|2026-11'] || overrides['PAYMENT_FINAL_VALUE|C2|2026-11'];
+  if (c2PaymentRows.length || c2Override) {
     var auditId = 'MIGRATION-NOTE-C2-2026-11';
     var finalValue = c2Override ? roundMoney_(c2Override.value) : 0;
     var relatedAmounts = c2Override && c2Override.relatedValues ? String(c2Override.relatedValues).split('|').map(function (x) { return roundMoney_(x); }) : c2PaymentRows.map(function (x) { return x.amount; });
     var details = {
       userConfirmed: true, correctionAmounts: relatedAmounts, formResponseRows: c2PaymentRows,
-      finalAmount: finalValue, action: 'Import one Payment Ledger row from canonical Room Tab value / override; do not add each Form Response as a separate payment.',
+      finalAmount: finalValue, action: 'Import one approved Adjustment Ledger row from the canonical Room Tab value / override; do not treat Form Response revisions as separate cash payments.',
       supersededSourceRows: c2PaymentRows.filter(function (x) { return roundMoney_(x.amount) !== finalValue; }).map(function (x) { return x.row; })
     };
-    var auditPayload = { LogID: auditId, Timestamp: new Date(), Actor: getActor_(), Action: 'C2_PAYMENT_CORRECTION_RECONCILIATION', EntityType: 'PAYMENT', EntityID: 'LEGACY-PAY-C2-2026-11', DetailsJSON: JSON.stringify(details), Source: 'User-confirmed migration rule' };
-    plan.push(makePlanItem_('AUDIT_LOG', V7.SHEETS.AUDIT, auditId, 'Form Responses', '', '2026-11', auditPayload, 'Captures the superseded form amounts without double-counting them.'));
+    var auditPayload = { LogID: auditId, Timestamp: new Date(), Actor: getActor_(), Action: 'C2_ADJUSTMENT_CORRECTION_RECONCILIATION', EntityType: 'ADJUSTMENT', EntityID: 'LEGACY-ADJ-C2-2026-11', DetailsJSON: JSON.stringify(details), Source: 'User-confirmed migration rule' };
+    plan.push(makePlanItem_('AUDIT_LOG', V7.SHEETS.AUDIT, auditId, 'Form Responses', '', '2026-11', auditPayload, 'Captures superseded Form amount revisions without creating duplicate credit adjustments.'));
   }
   return plan;
 }
