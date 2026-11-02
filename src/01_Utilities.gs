@@ -44,12 +44,28 @@ function roundMoney_(value) {
   return Math.round((toNumber_(value) + Number.EPSILON) * 100) / 100;
 }
 
-function reconciliationStatus_(totalValue, verifiedValue) {
+function calculateOutstanding_(totalValue, verifiedValue, adjustmentValue) {
+  if (totalValue === '' || totalValue === null || totalValue === undefined) return '';
+  var total = roundMoney_(totalValue);
+  var verified = roundMoney_(verifiedValue);
+  var adjustments = roundMoney_(adjustmentValue);
+  return roundMoney_(Math.max(0, total - verified - adjustments));
+}
+
+function reconciliationStatus_(totalValue, verifiedValue, adjustmentValue) {
   if (totalValue === '' || totalValue === null || totalValue === undefined) return 'LEGACY_INCOMPLETE';
   var total = roundMoney_(totalValue);
   var verified = roundMoney_(verifiedValue);
-  if (verified > total) return 'OVERPAID_REVIEW';
-  if (verified >= total) return 'RECONCILED_PAID';
+  var adjustments = roundMoney_(adjustmentValue);
+  var applied = roundMoney_(verified + adjustments);
+  if (applied > total) return adjustments > 0 ? 'CREDIT_BALANCE_REVIEW' : 'OVERPAID_REVIEW';
+  if (total === 0 && applied === 0) return 'RECONCILED_ZERO_BALANCE';
+  if (applied >= total) {
+    if (adjustments > 0 && verified === 0) return 'RECONCILED_BY_CREDIT';
+    if (adjustments > 0) return 'RECONCILED_BY_PAYMENT_AND_CREDIT';
+    return 'RECONCILED_PAID';
+  }
+  if (adjustments > 0) return verified > 0 ? 'PARTIAL_PAYMENT_AND_CREDIT' : 'PARTIAL_CREDIT_REVIEW';
   if (verified > 0) return 'RECONCILED_PARTIAL_OR_DUE';
   return 'NOT_YET_VERIFIED';
 }
@@ -194,10 +210,14 @@ function buildBillingMessage(data) {
     'Rent update for ' + data.period + ':',
     'Base Rent: Rs. ' + roundMoney_(data.baseRent).toFixed(2),
     'Electricity: Rs. ' + roundMoney_(data.electricityAmount).toFixed(2),
-    'Total Bill: Rs. ' + roundMoney_(data.totalAmount).toFixed(2),
+    'Total Bill: Rs. ' + roundMoney_(data.totalAmount).toFixed(2)
+  ];
+  var adjustments = roundMoney_(data.waiverCreditAdjustments);
+  if (adjustments > 0) lines.push('Rent Waiver / Credit Adjustments: Rs. ' + adjustments.toFixed(2));
+  lines.push(
     'Verified Received: Rs. ' + roundMoney_(data.verifiedPayments).toFixed(2),
     'Balance Due: Rs. ' + roundMoney_(data.outstandingAmount).toFixed(2)
-  ];
+  );
   if (data.outstandingAmount > 0 && data.upiLink) lines.push('', 'Pay via UPI:', data.upiLink);
   lines.push('', 'Thank you,', 'Sahare Properties');
   return lines.join('\n');

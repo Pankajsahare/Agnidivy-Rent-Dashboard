@@ -54,6 +54,18 @@ test('billing message uses one consistent source for amounts and balance', () =>
   assert.match(message, /Balance Due: Rs\. 5683\.60/);
 });
 
+test('billing message displays approved waiver and credit adjustments separately from cash', () => {
+  const message = sandbox.buildBillingMessage({
+    tenantName: 'Tenant', period: '2026-11', baseRent: 5500,
+    electricityAmount: 183.6, totalAmount: 5683.6,
+    verifiedPayments: 0, waiverCreditAdjustments: 5683.6,
+    outstandingAmount: 0, upiLink: ''
+  });
+  assert.match(message, /Verified Received: Rs\. 0\.00/);
+  assert.match(message, /Rent Waiver \/ Credit Adjustments: Rs\. 5683\.60/);
+  assert.match(message, /Balance Due: Rs\. 0\.00/);
+});
+
 test('WhatsApp link encodes the shared billing message and normalizes Indian mobile', () => {
   const url = sandbox.buildWhatsAppUrl_('9405908605', 'Rent & electricity');
   assert.match(url, /^https:\/\/wa\.me\/919405908605\?text=/);
@@ -96,12 +108,23 @@ test('migration override periods normalize Google Sheets Date and serial values'
   assert.equal(sandbox.normalizeMigrationPeriod_('2026/11'), '2026-11');
 });
 
-test('reconciliationStatus distinguishes incomplete, paid, partial, and overpaid', () => {
+test('reconciliationStatus distinguishes incomplete, paid, partial, overpaid and credit settlement', () => {
   assert.equal(sandbox.reconciliationStatus_('', 100), 'LEGACY_INCOMPLETE');
   assert.equal(sandbox.reconciliationStatus_(100, 0), 'NOT_YET_VERIFIED');
   assert.equal(sandbox.reconciliationStatus_(100, 50), 'RECONCILED_PARTIAL_OR_DUE');
   assert.equal(sandbox.reconciliationStatus_(100, 100), 'RECONCILED_PAID');
   assert.equal(sandbox.reconciliationStatus_(100, 125), 'OVERPAID_REVIEW');
+  assert.equal(sandbox.reconciliationStatus_(100, 0, 100), 'RECONCILED_BY_CREDIT');
+  assert.equal(sandbox.reconciliationStatus_(100, 0, 35), 'PARTIAL_CREDIT_REVIEW');
+  assert.equal(sandbox.reconciliationStatus_(100, 0, 125), 'CREDIT_BALANCE_REVIEW');
+  assert.equal(sandbox.reconciliationStatus_(0, 0, 0), 'RECONCILED_ZERO_BALANCE');
+});
+
+test('calculateOutstanding subtracts verified cash and approved credits independently', () => {
+  assert.equal(sandbox.calculateOutstanding_(1000, 200, 300), 500);
+  assert.equal(sandbox.calculateOutstanding_(1000, 0, 1000), 0);
+  assert.equal(sandbox.calculateOutstanding_(1000, 0, 1200), 0);
+  assert.equal(sandbox.calculateOutstanding_('', 0, 100), '');
 });
 
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 7.0.2 — Legacy rent waiver / credit accounting
+
+- Reclassified all 58 user-confirmed legacy `Amount Paid` values as approved Rent Waiver/Credit Adjustments, total ₹2,83,606.60.
+- Added an append-first `Adjustment Ledger`; legacy credits are no longer imported into `Payment Ledger`.
+- Historical bill outstanding, future monthly billing, payment verification refresh and dashboard now subtract approved credits separately from verified cash receipts.
+- Reclassified linked legacy file uploads as adjustment evidence, not payment receipts.
+- Updated the C2 November correction audit to record one ₹5,683.60 credit adjustment, retaining the existing override key as a backward-compatible alias.
+- Added unit tests for credit settlement, partial credits, excess-credit review and outstanding calculations.
+
 ## 7.0.1 — Agreement renderer correction
 
 - Removed DOCX-derived placeholder dependency from agreement generation.

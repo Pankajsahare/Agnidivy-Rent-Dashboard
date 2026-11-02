@@ -118,20 +118,22 @@ function refreshBillBalance_(billId) {
   var values = sheet.getDataRange().getValues();
   var cols = getColumnMap(values[0]);
   var paymentTotal = getVerifiedPaymentsForBill_(billId);
+  var adjustmentTotal = roundMoney_(getApprovedAdjustmentTotals_()[billId] || 0);
   for (var i = 1; i < values.length; i++) {
     if (String(valueByAliases_(values[i], cols, ['BillID'])) !== billId) continue;
     var totalRaw = valueByAliases_(values[i], cols, ['TotalAmount']);
     var totalKnown = totalRaw !== '' && totalRaw !== null && totalRaw !== undefined;
     var amount = totalKnown ? roundMoney_(totalRaw) : 0;
-    var outstanding = totalKnown ? roundMoney_(Math.max(0, amount - paymentTotal)) : '';
+    var outstanding = totalKnown ? calculateOutstanding_(amount, paymentTotal, adjustmentTotal) : '';
     values[i][cols[normalizeHeader_('VerifiedPayments')] - 1] = paymentTotal;
     values[i][cols[normalizeHeader_('OutstandingAmount')] - 1] = outstanding;
-    values[i][cols[normalizeHeader_('ReconciliationStatus')] - 1] = reconciliationStatus_(totalRaw, paymentTotal);
+    values[i][cols[normalizeHeader_('ReconciliationStatus')] - 1] = reconciliationStatus_(totalRaw, paymentTotal, adjustmentTotal);
     var room = getRoomMasterMap_()[normalizeRoom_(valueByAliases_(values[i], cols, ['RoomNo']))];
     if (!room) throw new Error('Room Master entry missing while reconciling bill ' + billId);
     var period = String(valueByAliases_(values[i], cols, ['BillingPeriod']));
     var upi = totalKnown ? buildUpiLink_(outstanding, room.roomNo, period) : '';
-    var message = buildBillingMessage({ tenantName: room.tenantName, period: period, baseRent: valueByAliases_(values[i], cols, ['BaseRent']), electricityAmount: valueByAliases_(values[i], cols, ['ElectricityAmount']), totalAmount: amount, verifiedPayments: paymentTotal, outstandingAmount: totalKnown ? outstanding : 0, upiLink: upi });
+    var message = buildBillingMessage({ tenantName: room.tenantName, period: period, baseRent: valueByAliases_(values[i], cols, ['BaseRent']), electricityAmount: valueByAliases_(values[i], cols, ['ElectricityAmount']), totalAmount: amount, verifiedPayments: paymentTotal, waiverCreditAdjustments: adjustmentTotal,
+      outstandingAmount: totalKnown ? outstanding : 0, upiLink: upi });
     values[i][cols[normalizeHeader_('UPIURL')] - 1] = upi;
     values[i][cols[normalizeHeader_('UPIQRURL')] - 1] = totalKnown ? buildQrUrl_(upi) : '';
     values[i][cols[normalizeHeader_('WhatsAppURL')] - 1] = totalKnown ? buildWhatsAppUrl_(room.mobile, message) : '';
