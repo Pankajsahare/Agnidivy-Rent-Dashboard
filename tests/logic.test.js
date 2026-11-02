@@ -52,7 +52,6 @@ test('billing message uses one consistent source for amounts and balance', () =>
   assert.match(message, /Base Rent: Rs\. 5500\.00/);
   assert.match(message, /Total Bill: Rs\. 5683\.60/);
   assert.match(message, /Balance Due: Rs\. 5683\.60/);
-  assert.match(message, /Balance Due: Rs\. 5683\.60/);
 });
 
 test('billing message displays approved waiver and credit adjustments separately from cash', () => {
@@ -64,7 +63,8 @@ test('billing message displays approved waiver and credit adjustments separately
   });
   assert.match(message, /Verified Received: Rs\. 0\.00/);
   assert.match(message, /Rent Waiver \/ Credit Adjustments: Rs\. 5683\.60/);
-  assert.match(message, /Balance Due: Rs\. 0\.00/);});
+  assert.match(message, /Balance Due: Rs\. 0\.00/);
+});
 
 test('WhatsApp link encodes the shared billing message and normalizes Indian mobile', () => {
   const url = sandbox.buildWhatsAppUrl_('9405908605', 'Rent & electricity');
