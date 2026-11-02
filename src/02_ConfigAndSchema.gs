@@ -121,7 +121,7 @@ function seedMigrationOverrides_() {
   var rows = [
     ['USER-CONFIRMED-B2-NOV26', 'CURRENT_TENANT_NAME', 'B2', '2026-11', 'Aifaz', '', 'User confirmed that Aifaz occupied B2 in November 2026.', 'USER', new Date(), 'YES'],
     ['USER-CONFIRMED-B3-NOV26', 'CURRENT_TENANT_NAME', 'B3', '2026-11', 'Aman', '', 'User confirmed that Aman occupied B3 in November 2026.', 'USER', new Date(), 'YES'],
-    ['USER-CONFIRMED-C2-NOV26', 'PAYMENT_FINAL_VALUE', 'C2', '2026-11', '5683.60', '5500|5683|5683.60', 'Three C2 Form payment values are revisions of one transaction. Import final amount once from the canonical room tab; do not add each form response.', 'USER', new Date(), 'YES']
+    ['USER-CONFIRMED-C2-NOV26', 'PAYMENT_FINAL_VALUE', 'C2', '2026-11', '5683.60', '5500|5683|5683.60', 'Three C2 Form amount values are revisions of one Rent Waiver/Credit Adjustment. Import the final amount once; do not create duplicate credits or cash payments.', 'USER', new Date(), 'YES']
   ];
   sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
 }
