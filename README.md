@@ -1,7 +1,7 @@
 [README.md](https://github.com/user-attachments/files/34285190/README.md)
 # Sahare Properties — Rent & Collection Auto-Pilot v7
 
-**Version:** 7.0.1  
+**Version:** 7.0.2  
 **Runtime:** Google Apps Script V8  
 **Timezone:** Asia/Kolkata  
 **Architecture:** Container-bound Apps Script + Google Sheets + Google Forms + Google Drive/Docs + Gmail; GitHub is the source-control and validation layer.
