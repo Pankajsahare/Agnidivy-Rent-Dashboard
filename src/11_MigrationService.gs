@@ -334,6 +334,20 @@ function revivePayloadDates_(payload) {
   return result;
 }
 
+/**
+ * Normalizes override billing periods. Sheets may return a month-formatted
+ * cell as a Date object rather than the displayed YYYY-MM string.
+ */
+function normalizeMigrationPeriod_(value) {
+  if (value === '' || value === null || value === undefined) return '';
+  var raw = String(value).trim();
+  var match = raw.match(/^(\\d{4})[-/](\\d{1,2})$/);
+  if (match) return periodKey_(Number(match[1]), Number(match[2]));
+  var date = toDateSafe_(value);
+  if (date) return Utilities.formatDate(date, V7.TIMEZONE, 'yyyy-MM');
+  return raw;
+}
+
 function getMigrationOverrides_() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(V7.SHEETS.OVERRIDES);
   if (!sheet || sheet.getLastRow() < 2) return {};
@@ -345,7 +359,7 @@ function getMigrationOverrides_() {
     if (String(valueByAliases_(row, cols, ['Active'])).toUpperCase() !== 'YES') continue;
     var type = String(valueByAliases_(row, cols, ['OverrideType'])).trim();
     var room = normalizeRoom_(valueByAliases_(row, cols, ['RoomNo']));
-    var period = String(valueByAliases_(row, cols, ['BillingPeriod']) || '');
+    var period = normalizeMigrationPeriod_(valueByAliases_(row, cols, ['BillingPeriod']));
     if (!type || !room || !period) continue;
     result[type + '|' + room + '|' + period] = {
       value: valueByAliases_(row, cols, ['OverrideValue']),
