@@ -4,9 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '..', 'src', '01_Utilities.gs'), 'utf8');
+const agreementSource = fs.readFileSync(path.join(__dirname, '..', 'src', '10_AgreementService.gs'), 'utf8');
 const sandbox = { Number, Math, Date, String, Object, Array, encodeURIComponent, isNaN, parseInt, parseFloat };
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox);
+vm.runInContext(agreementSource, sandbox);
 
 test('getColumnMap normalizes whitespace and case', () => {
   const map = sandbox.getColumnMap(['Room No', 'Month ', ' AMOUNT   PAID ']);
@@ -86,4 +88,37 @@ test('reconciliationStatus distinguishes incomplete, paid, partial, and overpaid
 test('buildPeriodChoiceList returns canonical periods across year boundaries', () => {
   const result = sandbox.buildPeriodChoiceList_(new Date(2026, 0, 15), 1, 2);
   assert.deepEqual(Array.from(result), ['2025-12', '2026-01', '2026-02', '2026-03']);
+});
+
+
+test('v6.1 agreement model preserves the original 2-page structure and eight clauses', () => {
+  const model = sandbox.buildV61AgreementModel_({
+    roomNo: 'B2', tenantName: 'Aifaz', mobile: '9999999999', meterNo: 'J0044',
+    email: 'tenant@example.com', baseRent: 3200, electricityRate: 13.5,
+    deposit: 5000, rentDeposit: 3500, electricityDeposit: 1500,
+    depositMode: 'UPI', depositDate: new Date(2026, 5, 1)
+  }, {
+    startDateText: '01-06-2026', endDateText: '30-04-2027',
+    depositDateText: '01-06-2026', creationDate: '02 November 2026',
+    months: 11, upiId: '9405908605@ybi', ownerMobile: '9405908605'
+  });
+  assert.equal(model.roomNo, 'B2');
+  assert.equal(model.tenantName, 'Aifaz');
+  assert.equal(model.termsList.length, 8);
+  assert.match(model.partiesData[1][1], /Room No. B2/);
+  assert.match(model.propertyData[3][1], /Rs. 3200.00/);
+  assert.match(model.periodData[1][1], /Rent Deposit: Rs. 3500.00/);
+  assert.match(model.periodData[1][1], /Electricity Bill Deposit: Rs. 1500.00/);
+  assert.match(model.witnessText, /02 November 2026/);
+  assert.match(model.signatureData[1][1], /Aifaz/);
+});
+
+test('v6.1 agreement model uses explicit fallback when deposit split is unavailable', () => {
+  const model = sandbox.buildV61AgreementModel_({
+    roomNo: 'C2', tenantName: 'Tenant C2', baseRent: 5000, electricityRate: 13.5,
+    deposit: 10000, rentDeposit: '', electricityDeposit: '', mobile: '', meterNo: ''
+  }, { startDateText: '01-11-2026', endDateText: '30-09-2027', creationDate: '02 November 2026', months: 11 });
+  assert.equal(model.depositBreakdown, 'Deposit breakdown not separately recorded');
+  assert.match(model.periodData[1][1], /Deposit breakdown not separately recorded/);
+  assert.equal(model.termsList.length, 8);
 });
