@@ -311,7 +311,7 @@ function applyMigrationPreview() {
     setConfigValue_('MIGRATION_APPROVED', 'NO');
     logAudit_('MIGRATION_APPLIED', 'MIGRATION', runId, { applied: applied, targets: Object.keys(byTarget) });
     refreshV7Dashboard();
-    ui.alert('Migration completed.\nRows appended: ' + applied + '\nLegacy source sheets were not edited or deleted.\nNext: verify totals and manually reconcile LEGACY_UNVERIFIED payments.');
+    ui.alert('Migration completed.\nRows appended: ' + applied + '\nLegacy source sheets were not edited or deleted.\nNext: verify totals and review Adjustment Ledger totals separately from actual verified cash payments.');
     return { applied: applied, targets: Object.keys(byTarget) };
     } finally {
       lock.releaseLock();
