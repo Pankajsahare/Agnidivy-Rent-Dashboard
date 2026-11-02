@@ -1,6 +1,6 @@
 {
   "name": "sahare-properties-autopilot-v7",
-  "version": "7.0.1",
+  "version": "7.0.2",
   "private": true,
   "description": "Modular Google Apps Script property rent and collection automation for Sahare Properties.",
   "scripts": {
